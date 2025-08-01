@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Veri Çekme{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h3>Admin Veri Çekme</h3>
+                </div>
+                <div class="card-body">
+                    {% if error %}
+                    <div class="alert alert-danger">
+                        {{ error }}
+                    </div>
+                    {% endif %}
+
+                    <form method="POST">
+                        <div class="form-group">
+                            <label for="url">Base64 Encoded URL</label>
+                            <input type="text" class="form-control" id="url" name="url" value="buraya base64 encoded url girin" required>
+                            <small class="form-text text-muted">Base64 ile kodlanmış URL girin.</small>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Veri Çek</button>
+                    </form>
+
+                    {% if result %}
+                    <div class="mt-4">
+                        <h4>Sonuç:</h4>
+                        <pre class="bg-light p-3">{{ result }}</pre>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

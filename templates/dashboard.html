@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard - Banka Uygulaması</title>
+</head>
+<body>
+    <h2>Welcome, {{ current_user.id }}!</h2>
+    <p>Your account balance: {{ balance }} USD</p>
+    <a href="{{ url_for('profile') }}">Go to Profile</a>
+    <br>
+    <a href="{{ url_for('logout') }}">Logout</a>
+</body>
+</html>

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Kayıt Ol - Demiröz Bank{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header text-center bg-primary text-white">
+                    <h4>Yeni Hesap Oluştur</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('register') }}">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Kullanıcı Adı</label>
+                            <input type="text" class="form-control" id="username" name="username" required maxlength="32">
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Şifre</label>
+                            <input type="password" class="form-control" id="password" name="password" required minlength="20" maxlength="128">
+                            <div class="form-text">
+                                Şifreniz en az 20 karakter, büyük/küçük harf, rakam ve özel karakter içermelidir.
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Kayıt Ol</button>
+                    </form>
+                    <hr>
+                    <div class="text-center">
+                        Zaten hesabınız var mı? <a href="{{ url_for('login') }}">Giriş Yap</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

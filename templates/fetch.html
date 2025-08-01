@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>Harici Veri Çekme</h2>
+    <p class="text-muted">Bu sayfa, harici kaynaklardan veri çekmenize olanak sağlar.</p>
+    
+    <div class="card">
+        <div class="card-body">
+            <form id="fetchForm" method="POST" action="{{ url_for('fetch_data') }}">
+                <div class="form-group">
+                    <label for="url">URL</label>
+                    <input type="text" class="form-control" id="url" name="url" 
+                           placeholder="http://example.com" required>
+                    <small class="form-text text-muted">
+                        Desteklenen formatlar: Normal URL, Base64 (base64:...), Hex (hex:...)
+                    </small>
+                </div>
+                <button type="submit" class="btn btn-primary">Veri Çek</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card mt-4" id="resultCard" style="display: none;">
+        <div class="card-header">
+            Sonuç
+        </div>
+        <div class="card-body">
+            <pre id="result"></pre>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('fetchForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    
+    fetch('{{ url_for("fetch_data") }}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+        document.getElementById('resultCard').style.display = 'block';
+    })
+    .catch(error => {
+        document.getElementById('result').textContent = 'Hata: ' + error;
+        document.getElementById('resultCard').style.display = 'block';
+    });
+});
+</script>
+{% endblock %} 

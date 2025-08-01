@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Mesajlar{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row">
+        <!-- Sol Taraf - Mesaj Listesi -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h3 class="mb-0">Mesajlar</h3>
+                    <button class="btn btn-light" data-bs-toggle="modal" data-bs-target="#composeModal">
+                        Yeni Mesaj
+                    </button>
+                </div>
+                <div class="card-body">
+                    <ul class="nav nav-tabs mb-3">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="#inbox" data-bs-toggle="tab">Gelen Kutusu</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#sent" data-bs-toggle="tab">Gönderilen</a>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content">
+                        <!-- Gelen Kutusu -->
+                        <div class="tab-pane fade show active" id="inbox">
+                            {% if received_messages %}
+                                {% for message in received_messages %}
+                                <div class="card mb-2 {% if not message.is_read %}border-primary{% endif %}">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <h5 class="card-title mb-1">{{ message.sender.username }}</h5>
+                                            <small class="text-muted">{{ message.timestamp.strftime('%d/%m/%Y %H:%M') }}</small>
+                                        </div>
+                                        <p class="card-text">{{ message.content }}</p>
+                                        {% if not message.is_read %}
+                                        <form method="POST" action="{{ url_for('mark_message_read', message_id=message.id) }}" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-outline-primary">Okundu İşaretle</button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <p class="text-muted">Gelen kutusu boş.</p>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Gönderilen Mesajlar -->
+                        <div class="tab-pane fade" id="sent">
+                            {% if sent_messages %}
+                                {% for message in sent_messages %}
+                                <div class="card mb-2">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <h5 class="card-title mb-1">{{ message.recipient.username }}</h5>
+                                            <small class="text-muted">{{ message.timestamp.strftime('%d/%m/%Y %H:%M') }}</small>
+                                        </div>
+                                        <p class="card-text">{{ message.content }}</p>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <p class="text-muted">Gönderilen mesaj yok.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Sağ Taraf - Kullanıcı Listesi -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h4 class="mb-0">Kullanıcılar</h4>
+                </div>
+                <div class="card-body">
+                    <div class="list-group">
+                        {% for user in users %}
+                            {% if user.id != current_user.id %}
+                            <button class="list-group-item list-group-item-action" 
+                                    onclick="composeMessage('{{ user.username }}')">
+                                {{ user.username }}
+                            </button>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Yeni Mesaj Modal -->
+<div class="modal fade" id="composeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Yeni Mesaj</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('send_message') }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="recipient" class="form-label">Alıcı</label>
+                        <input type="text" class="form-control" id="recipient" name="recipient" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="content" class="form-label">Mesaj</label>
+                        <textarea class="form-control" id="content" name="content" rows="4" required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary">Gönder</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+function composeMessage(username) {
+    document.getElementById('recipient').value = username;
+    new bootstrap.Modal(document.getElementById('composeModal')).show();
+}
+</script>
+{% endblock %}
+{% endblock %} 

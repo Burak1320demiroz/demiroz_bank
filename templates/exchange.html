@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Döviz İşlemleri{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row">
+        <!-- Sol Taraf - Döviz Listesi -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0">Döviz Kurları</h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Döviz</th>
+                                    <th>Alış</th>
+                                    <th>Satış</th>
+                                    <th>İşlemler</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for currency, data in rates.items() %}
+                                <tr>
+                                    <td>{{ currency }}</td>
+                                    <td>{{ "%.4f"|format(data.buy) }} ₺</td>
+                                    <td>{{ "%.4f"|format(data.sell) }} ₺</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-success" onclick="showTradeModal('{{ currency }}', 'buy')">Al</button>
+                                        <button class="btn btn-sm btn-danger" onclick="showTradeModal('{{ currency }}', 'sell')">Sat</button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sağ Taraf - İşlem Formu -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h4 class="mb-0">İşlem Yap</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" id="tradeForm">
+                        <input type="hidden" name="currency" id="currency">
+                        <input type="hidden" name="action" id="action">
+                        
+                        <div class="form-group mb-3">
+                            <label for="amount">Miktar</label>
+                            <input type="number" class="form-control" id="amount" name="amount" min="0.01" step="0.01" required>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary" id="submitBtn">İşlemi Gerçekleştir</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Bakiye Bilgisi -->
+            <div class="card mt-3">
+                <div class="card-body">
+                    <h5>Bakiye</h5>
+                    <h3 class="text-primary">{{ "%.2f"|format(current_user.balance) }} ₺</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- İşlem Modal -->
+<div class="modal fade" id="tradeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">İşlem Onayı</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>İşlem detayları:</p>
+                <ul>
+                    <li>Döviz: <span id="modalCurrency"></span></li>
+                    <li>İşlem: <span id="modalAction"></span></li>
+                    <li>Miktar: <span id="modalAmount"></span></li>
+                    <li>Toplam Tutar: <span id="modalTotal"></span> ₺</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                <button type="button" class="btn btn-primary" onclick="confirmTrade()">Onayla</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript -->
+<script>
+function showTradeModal(currency, action) {
+    const rates = {{ rates|tojson }};
+    const amount = document.getElementById('amount').value;
+    const rate = action === 'buy' ? rates[currency].buy : rates[currency].sell;
+    const total = amount * rate;
+    
+    document.getElementById('modalCurrency').textContent = currency;
+    document.getElementById('modalAction').textContent = action === 'buy' ? 'Alış' : 'Satış';
+    document.getElementById('modalAmount').textContent = amount;
+    document.getElementById('modalTotal').textContent = total.toFixed(2);
+    
+    document.getElementById('currency').value = currency;
+    document.getElementById('action').value = action;
+    
+    new bootstrap.Modal(document.getElementById('tradeModal')).show();
+}
+
+function confirmTrade() {
+    document.getElementById('tradeForm').submit();
+}
+</script>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+{% endblock %} 

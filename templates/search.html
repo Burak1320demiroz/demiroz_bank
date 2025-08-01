@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Demiröz Bank - Arama{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 800px; margin: 50px auto;">
+    <div class="card-header">
+        <h2 class="card-title">Kullanıcı Arama</h2>
+    </div>
+    
+    <div class="card-body">
+        <form method="GET" action="{{ url_for('search') }}">
+            <div class="form-group">
+                <label for="q" class="form-label">Arama</label>
+                <input type="text" id="q" name="q" class="form-control" value="{{ query }}">
+            </div>
+            <button type="submit" class="btn btn-primary">Ara</button>
+        </form>
+        
+        {% if query %}
+        <div class="search-results mt-4">
+            <h3>Arama Sonuçları</h3>
+            <div class="alert alert-info">
+                <!-- SSTI açığı: Kullanıcı girdisi doğrudan template'e aktarılıyor -->
+                {{ query }}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.search-results {
+    margin-top: 20px;
+}
+
+.alert {
+    margin-top: 20px;
+}
+</style>
+{% endblock %} 
