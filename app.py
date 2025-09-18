@@ -32,8 +32,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 # Flask uygulaması oluşturma
 app = Flask(__name__)
-app.env = 'development'  # Development modunda çalıştır
-DEBUG_MODE = True
+app.env = 'production'  # Production modunda çalıştır
+DEBUG_MODE = False
 r = redis.Redis(host='localhost', port=6379)
 
 # Temel yapılandırma ayarları
@@ -41,13 +41,13 @@ app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 app.config.update(
     # Oturum Yönetimi Ayarları
     PERMANENT_SESSION_LIFETIME=timedelta(days=1),
-    SESSION_COOKIE_SECURE=False,    # Development için False
+    SESSION_COOKIE_SECURE=True,    # Production için True
     SESSION_COOKIE_HTTPONLY=True,  # XSS koruması
-    SESSION_COOKIE_SAMESITE='Lax', # CSRF koruması
+    SESSION_COOKIE_SAMESITE='Strict', # CSRF koruması
     SESSION_COOKIE_NAME='demiroz_bank_session',
     
     # Ek Güvenlik Ayarları
-    PREFERRED_URL_SCHEME='http',  # Development için http
+    PREFERRED_URL_SCHEME='https',  # Production için https
     JSONIFY_PRETTYPRINT_REGULAR=True,  # Development için True
     UPLOAD_FOLDER='uploads',  # Dosya yükleme klasörü
     SQLALCHEMY_DATABASE_URI='sqlite:///bank.db',
@@ -83,24 +83,24 @@ try:
     )
     redis_client.ping()  # Bağlantı testi
     
-    # Rate limiter'ı devre dışı bırak
+    # Rate limiter'ı aktif et
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
         storage_uri="memory://",
-        default_limits=["1000000 per second"],  # Çok yüksek limit
+        default_limits=["100 per minute"],  # Güvenli limit
         strategy="fixed-window",
-        enabled=False  # Rate limiter'ı devre dışı bırak
+        enabled=True  # Rate limiter'ı aktif et
     )
 except (redis.ConnectionError, redis.TimeoutError) as e:
     logging.warning(f"Redis bağlantı hatası: {str(e)} - Bellek deposuna geçiliyor...")
-    # Rate limiter'ı devre dışı bırak
+    # Rate limiter'ı aktif et
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
         storage_uri="memory://",
-        default_limits=["1000000 per second"],  # Çok yüksek limit
-        enabled=False  # Rate limiter'ı devre dışı bırak
+        default_limits=["100 per minute"],  # Güvenli limit
+        enabled=True  # Rate limiter'ı aktif et
     )
 
 # Loglama Yapılandırması
@@ -130,15 +130,42 @@ failed_attempts = {}  # {ip: {'count': count, 'timestamp': timestamp}}
 
 def is_ip_blocked(ip):
     """IP adresi engellenmiş mi kontrol et"""
-    return False  # IP engellemeyi kaldırdım
+    if ip in blocked_ips:
+        if int(time.time()) < blocked_ips[ip]['blocked_until']:
+            return True
+        else:
+            # Engelleme süresi dolmuş, kaldır
+            del blocked_ips[ip]
+    return False
 
 def block_ip(ip):
     """IP adresini engelle"""
-    pass  # IP engellemeyi kaldırdım
+    blocked_ips[ip] = {
+        'blocked_until': int(time.time()) + 3600  # 1 saat engelle
+    }
+    logging.warning(f"IP adresi engellendi: {ip}")
 
 def check_ip_rate(ip):
     """IP bazlı istek sayısını kontrol et"""
-    return True  # IP bazlı rate limit'i kaldırdım
+    current_time = int(time.time())
+    
+    # IP için istek sayısını kontrol et
+    if ip not in ip_request_count:
+        ip_request_count[ip] = {'count': 0, 'last_reset': current_time}
+    
+    # Her dakika sıfırla
+    if current_time - ip_request_count[ip]['last_reset'] > 60:
+        ip_request_count[ip] = {'count': 0, 'last_reset': current_time}
+    
+    # İstek sayısını artır
+    ip_request_count[ip]['count'] += 1
+    
+    # 100 istek/dakika limiti
+    if ip_request_count[ip]['count'] > 100:
+        block_ip(ip)
+        return False
+    
+    return True
 
 # Decorator Tanımları
 def admin_required(f):
@@ -217,7 +244,7 @@ def init_db():
         )
         db.session.add(burak_user)
         
-        # Admin bilgilerini ayrı bir tabloya ekle
+        # Admin bilgilerini güvenli şekilde sakla (CTF flag'i kaldırıldı)
         with get_db() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS admin_secrets (
@@ -230,7 +257,7 @@ def init_db():
             conn.execute("""
                 INSERT INTO admin_secrets (username, password, secret_key)
                 VALUES (?, ?, ?)
-            """, ('admin', ADMIN_FIXED_PASSWORD, 'DEMIROZ{JSON_SQLi_ile_Admin_Bilgilerine_Ulasma_Basarisi}'))
+            """, ('admin', ADMIN_FIXED_PASSWORD, 'SECURE_ADMIN_KEY_REMOVED_FOR_SECURITY'))
             conn.commit()
         
         # 20 rastgele müşteri oluştur
@@ -278,20 +305,7 @@ def internal_server_error(e):
                         title='Sunucu Hatası',
                         message='Bir hata oluştu'), 500
 
-@app.route('/debug')
-@admin_required  # Sadece admin erişebilir
-def debug_info():
-    """Debug bilgilerini göster (Sadece admin için)"""
-    if not current_user.is_admin:
-        return 'Erişim reddedildi', 403
-    
-    # Sadece güvenli bilgileri göster
-    debug_info = {
-        'app_version': '1.0.0',
-        'environment': app.env,
-        'debug_mode': DEBUG_MODE
-    }
-    return jsonify(debug_info)
+# Debug endpoint'i kaldırıldı - Güvenlik nedeniyle
 
 @app.route('/error')
 def generate_error():
@@ -383,7 +397,8 @@ def home():
     return render_template('login.html')
 
 @app.route('/login', methods=['GET', 'POST'])
-@security_headers  # Rate limiter'ı kaldırdım
+@limiter.limit("5 per minute")  # Login için rate limiting
+@security_headers
 def login():
     """Kullanıcı giriş işlemini işler"""
     if current_user.is_authenticated:
@@ -440,21 +455,50 @@ def dashboard():
 
 @app.route('/transfer', methods=['GET', 'POST'])
 @login_required
+@limiter.limit("10 per minute")  # Transfer için rate limiting
 def transfer():
     if request.method == 'POST':
-        recipient_id = request.form.get('recipient')
-        amount = float(request.form.get('amount'))
-        description = request.form.get('description', '')
-        
-        if amount <= 0:
-            return render_template('transfer.html', error='Geçersiz transfer tutarı', users=User.query.all(), current_user_id=current_user.id)
-        
-        recipient = User.query.get(recipient_id)
-        if not recipient:
-            return render_template('transfer.html', error='Alıcı bulunamadı', users=User.query.all(), current_user_id=current_user.id)
-        
-        if current_user.balance < amount:
-            return render_template('transfer.html', error='Yetersiz bakiye', users=User.query.all(), current_user_id=current_user.id)
+        try:
+            recipient_id = request.form.get('recipient')
+            amount_str = request.form.get('amount', '')
+            description = request.form.get('description', '')
+            
+            # Input validation
+            if not recipient_id or not amount_str:
+                return render_template('transfer.html', error='Tüm alanlar zorunludur', users=User.query.all(), current_user_id=current_user.id)
+            
+            # Amount validation
+            try:
+                amount = float(amount_str)
+            except (ValueError, TypeError):
+                return render_template('transfer.html', error='Geçersiz tutar formatı', users=User.query.all(), current_user_id=current_user.id)
+            
+            if amount <= 0:
+                return render_template('transfer.html', error='Transfer tutarı pozitif olmalıdır', users=User.query.all(), current_user_id=current_user.id)
+            
+            if amount > 100000:  # Maksimum transfer limiti
+                return render_template('transfer.html', error='Transfer tutarı çok yüksek', users=User.query.all(), current_user_id=current_user.id)
+            
+            # Description validation
+            if len(description) > 200:
+                return render_template('transfer.html', error='Açıklama çok uzun', users=User.query.all(), current_user_id=current_user.id)
+            
+            # HTML escape description
+            description = html.escape(description)
+            
+            recipient = User.query.get(recipient_id)
+            if not recipient:
+                return render_template('transfer.html', error='Alıcı bulunamadı', users=User.query.all(), current_user_id=current_user.id)
+            
+            if recipient.id == current_user.id:
+                return render_template('transfer.html', error='Kendinize transfer yapamazsınız', users=User.query.all(), current_user_id=current_user.id)
+            
+            if current_user.balance < amount:
+                return render_template('transfer.html', error='Yetersiz bakiye', users=User.query.all(), current_user_id=current_user.id)
+                
+        except Exception as e:
+            logging.error(f"Transfer validation hatası: {str(e)}")
+            return render_template('transfer.html', error='Geçersiz veri', users=User.query.all(), current_user_id=current_user.id)
         
         # Transfer işlemini gerçekleştir
         current_user.balance -= amount
@@ -499,9 +543,23 @@ def profile():
 @admin_required
 @security_headers
 def admin():
-    """Admin kontrol paneli"""
-    # Ek güvenlik kontrolü
-    if request.user_agent.string != session.get('user_agent'):
+    """Admin kontrol paneli - Güvenli versiyon"""
+    # Ek güvenlik kontrolleri
+    if not current_user.is_admin:
+        logging.warning(f"Yetkisiz admin erişim denemesi: {current_user.username}")
+        return render_template('error.html', 
+                            title='Erişim Reddedildi',
+                            message='Bu sayfaya erişim yetkiniz yok'), 403
+    
+    # IP adresi kontrolü (sadece localhost)
+    if request.remote_addr not in ['127.0.0.1', '::1']:
+        logging.warning(f"Admin paneli dış IP erişim denemesi: {request.remote_addr}")
+        return render_template('error.html',
+                            title='Erişim Reddedildi', 
+                            message='Admin paneline sadece yerel erişim izin verilir'), 403
+    
+    # User-Agent kontrolü
+    if 'user_agent' in session and session['user_agent'] != request.user_agent.string:
         logging.warning("User-Agent değişikliği tespit edildi!")
         session.clear()
         return redirect(url_for('home'))
@@ -526,16 +584,12 @@ def admin():
             'timestamp': transaction.timestamp.strftime('%d/%m/%Y %H:%M')
         })
     
-    # CTF Flag'i
-    flag = "DEMIROZ{SSRF_ve_File_Upload_ile_Admin_Paneline_Ulasma_Basarisi}"
-    
     return render_template('admin.html',
                         title='Admin Paneli',
                         total_users=total_users,
                         total_transactions=total_transactions,
                         total_balance=total_balance,
-                        recent_activities=activities,
-                        flag=flag)
+                        recent_activities=activities)
 
 @app.route('/logout')
 @admin_required
@@ -722,33 +776,64 @@ class AWSWAF:
 waf = AWSWAF()
 
 @app.route('/balance', methods=['GET', 'POST'])
+@login_required
 @security_headers
 def check_balance():
-    """Bakiye sorgulama (Güvenli)"""
+    """Bakiye sorgulama - Güvenli versiyon (SQL Injection korumalı)"""
     if request.method == 'POST':
         try:
             # AWS WAF kontrolü
             if not waf.check_request(request):
-                return 'AWS WAF: Güvenlik ihlali tespit edildi', 403
+                return jsonify({
+                    'status': 'error',
+                    'message': 'AWS WAF: Güvenlik ihlali tespit edildi'
+                }), 403
             
             # JSON verisini al
             data = request.get_json()
             if not data:
-                return 'Geçersiz JSON verisi', 400
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Geçersiz JSON verisi'
+                }), 400
             
-            # Sadece izin verilen sorguları kabul et
-            query = data.get('query', '')
-            if not query:
-                return 'Sorgu gerekli', 400
+            # Sadece kullanıcı ID'sini kabul et
+            user_id = data.get('user_id')
+            if not user_id:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Kullanıcı ID gerekli'
+                }), 400
             
-            # Sadece SELECT sorgularına izin ver
-            if not query.strip().upper().startswith('SELECT'):
-                return 'Sadece SELECT sorgularına izin verilir', 403
+            # Kullanıcı ID'sini doğrula (sadece sayı)
+            try:
+                user_id = int(user_id)
+            except (ValueError, TypeError):
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Geçersiz kullanıcı ID formatı'
+                }), 400
             
-            # Parametreli sorgu kullan
-            with get_db() as db:
-                cursor = db.execute("SELECT * FROM users WHERE id = ?", (query.split()[-1],))
+            # Sadece kendi bilgilerini sorgulayabilir
+            if user_id != current_user.id and not current_user.is_admin:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Sadece kendi bilgilerinizi sorgulayabilirsiniz'
+                }), 403
+            
+            # Güvenli parametreli sorgu kullan
+            with get_db() as db_conn:
+                cursor = db_conn.execute(
+                    "SELECT id, username, account_number, balance FROM users WHERE id = ?", 
+                    (user_id,)
+                )
                 result = cursor.fetchall()
+            
+            if not result:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Kullanıcı bulunamadı'
+                }), 404
             
             return jsonify({
                 'status': 'success',
@@ -756,9 +841,10 @@ def check_balance():
             })
             
         except Exception as e:
+            logging.error(f"Bakiye sorgulama hatası: {str(e)}")
             return jsonify({
                 'status': 'error',
-                'message': 'Geçersiz sorgu'
+                'message': 'Sunucu hatası'
             }), 500
     
     return render_template('balance.html')
@@ -1275,10 +1361,16 @@ def credit_card():
     return render_template('credit_card.html')
 
 @app.route('/admin/fetch', methods=['GET', 'POST'])
-@login_required
+@admin_required
 @security_headers
 def admin_fetch():
-    """Admin bilgilerini getir (Base64 URL fetch)"""
+    """Admin bilgilerini getir - Güvenli versiyon (SSRF korumalı)"""
+    # Sadece admin kullanıcılar erişebilir
+    if not current_user.is_admin:
+        return render_template('error.html', 
+                            title='Erişim Reddedildi',
+                            message='Bu sayfaya erişim yetkiniz yok'), 403
+    
     result = None
     error = None
     
@@ -1292,26 +1384,71 @@ def admin_fetch():
             # Base64 decode
             try:
                 decoded_url = base64.b64decode(encoded_url).decode('utf-8')
-                print(f"Decoded URL: {decoded_url}")  # Debug için
             except Exception as e:
-                error = f'Base64 decode hatası: {str(e)}'
+                error = 'Geçersiz URL formatı'
                 return render_template('admin_fetch.html', error=error)
             
-            # URL'yi fetch et
+            # URL güvenlik kontrolü
             try:
-                response = requests.get(decoded_url, timeout=5)
-                response.raise_for_status()  # HTTP hatalarını kontrol et
+                parsed_url = urlparse(decoded_url)
+                
+                # Sadece HTTPS protokollerine izin ver
+                if parsed_url.scheme not in ['https']:
+                    error = 'Sadece HTTPS protokolleri desteklenir'
+                    return render_template('admin_fetch.html', error=error)
+                
+                # İç IP adreslerini engelle
+                hostname = parsed_url.hostname
+                if not hostname:
+                    error = 'Geçersiz hostname'
+                    return render_template('admin_fetch.html', error=error)
+                
+                # Tehlikeli hostname'leri engelle
+                dangerous_hosts = [
+                    'localhost', '127.0.0.1', '::1', '0.0.0.0',
+                    '169.254.169.254',  # AWS metadata
+                    'metadata.google.internal',  # Google metadata
+                    '169.254.169.254',  # Azure metadata
+                ]
+                
+                if hostname in dangerous_hosts or \
+                   hostname.startswith('192.168.') or \
+                   hostname.startswith('10.') or \
+                   hostname.startswith('172.') or \
+                   hostname.startswith('169.254.'):
+                    error = 'İç IP adreslerine erişim engellendi'
+                    return render_template('admin_fetch.html', error=error)
+                
+                # Sadece güvenli domain'lere izin ver
+                allowed_domains = [
+                    'api.bank.com',
+                    'secure.bank.com',
+                    'internal.bank.com'
+                ]
+                
+                if not any(hostname.endswith(domain) for domain in allowed_domains):
+                    error = 'Sadece güvenli domain\'lere erişim izin verilir'
+                    return render_template('admin_fetch.html', error=error)
+                
+                # URL'yi fetch et
+                response = requests.get(decoded_url, timeout=5, verify=True)
+                response.raise_for_status()
+                
+                # Maksimum boyut kontrolü (1MB)
+                content_length = int(response.headers.get('content-length', 0))
+                if content_length > 1024 * 1024:
+                    error = 'Dosya boyutu çok büyük'
+                    return render_template('admin_fetch.html', error=error)
+                
                 result = response.text
-                print(f"Response: {result}")  # Debug için
+                
             except requests.exceptions.RequestException as e:
-                # Hata durumunda flag'i göster
-                result = "DEMIROZ{SSRF_ile_Admin_Bilgilerine_Ulasma_Basarisi}"
-                return render_template('admin_fetch.html', result=result)
+                error = f'URL erişim hatası: {str(e)}'
+                return render_template('admin_fetch.html', error=error)
             
         except Exception as e:
-            # Herhangi bir hata durumunda flag'i göster
-            result = "DEMIROZ{SSRF_ile_Admin_Bilgilerine_Ulasma_Basarisi}"
-            return render_template('admin_fetch.html', result=result)
+            error = f'Beklenmeyen hata: {str(e)}'
+            return render_template('admin_fetch.html', error=error)
     
     return render_template('admin_fetch.html', result=result, error=error)
 
